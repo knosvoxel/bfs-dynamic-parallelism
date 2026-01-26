@@ -12,7 +12,7 @@
 #include <FastNoiseLite.h>
 #include <glm/glm.hpp>
 
-#define VERTEX_COUNT 4
+#define VERTEX_COUNT 128
 
 using namespace glm;
 
@@ -49,20 +49,24 @@ void constructCSR(const std::vector<int>& noiseData, std::vector<int>& rowPtrs, 
 
 			if (noiseData[idx] == 1)
 			{
-				int dx[] = { 0, 0, 1, -1 };
-				int dy[] = { 1, -1, 0, 0 };
+				vec2 neighbours[4] = { 
+					vec2(0, 1), 
+					vec2(0, -1), 
+					vec2(1, 0), 
+					vec2(-1, 0) 
+				};
 
 				for (int i = 0; i < 4; i++)
 				{
-					int nx = x + dx[i];
-					int ny = y + dy[i];
+					vec2 neighbourPos = vec2(x, y) + neighbours[i];
 
-					if (nx >= 0 && nx < VERTEX_COUNT && ny >= 0 && ny < VERTEX_COUNT)
+					if (neighbourPos.x >= 0 && neighbourPos.x < VERTEX_COUNT && 
+						neighbourPos.y >= 0 && neighbourPos.y < VERTEX_COUNT)
 					{
-						int v = ny * VERTEX_COUNT + nx;
-						if (noiseData[v] == 1)
+						int neighbourIdx = neighbourPos.y * VERTEX_COUNT + neighbourPos.x;
+						if (noiseData[neighbourIdx] == 1)
 						{
-							colIndices.push_back(gridPosToNodeID[v]);
+							colIndices.push_back(gridPosToNodeID[neighbourIdx]);
 						}
 					}
 				}
@@ -77,45 +81,37 @@ void constructCSR(const std::vector<int>& noiseData, std::vector<int>& rowPtrs, 
 
 int main(void)
 {
-	//FastNoiseLite noise;
-	//noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
-	//noise.SetFractalType(FastNoiseLite::FractalType_FBm);
+	FastNoiseLite noise;
+	noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
+	noise.SetFractalType(FastNoiseLite::FractalType_FBm);
 
-	//std::vector<int> noiseData(VERTEX_COUNT * VERTEX_COUNT);
-	//int index = 0;
+	std::vector<int> noiseData(VERTEX_COUNT * VERTEX_COUNT);
+	int index = 0;
 
-	//for (int y = 0; y < VERTEX_COUNT; y++)
-	//{
-	//	for (int x = 0; x < VERTEX_COUNT; x++)
-	//	{
-	//		float noiseValue = (noise.GetNoise((float)x, (float)y) + 1.0) / 2.0;
-	//		noiseValue >= 0.5 ? noiseData[index++] = 1 : noiseData[index++] = 0;
-	//	}
-	//}
+	for (int y = 0; y < VERTEX_COUNT; y++)
+	{
+		for (int x = 0; x < VERTEX_COUNT; x++)
+		{
+			float noiseValue = (noise.GetNoise((float)x , (float)y) + 1.0) / 2.0;
+			noiseValue >= 0.5 ? noiseData[index++] = 1 : noiseData[index++] = 0;
+		}
+	}
 
-	//std::ofstream ofs("noise.ppm", std::ios::binary);
+	std::ofstream ofs("noise.ppm", std::ios::binary);
 
-	//std::stringstream ss;
-	//ss << "P6\n" << VERTEX_COUNT << " " << VERTEX_COUNT << "\n255\n";
-	//std::string imageHeader = ss.str();
-	//ofs << imageHeader;
+	std::stringstream ss;
+	ss << "P6\n" << VERTEX_COUNT << " " << VERTEX_COUNT << "\n255\n";
+	std::string imageHeader = ss.str();
+	ofs << imageHeader;
 
-	//for (float val : noiseData)
-	//{
-	//	unsigned char color = (unsigned char)(val * 255.0f);
-	//	ofs << color << color << color;
-	//}
-	//ofs.close();
+	for (float val : noiseData)
+	{
+		unsigned char color = (unsigned char)(val * 255.0f);
+		ofs << color << color << color;
+	}
+	ofs.close();
 	std::vector<int> rowPtrs;
 	std::vector<int> colIndices;
-
-	std::vector<int> noiseData =
-	{
-		1, 1, 0, 0,
-		1, 1, 1, 1,
-		0, 1, 1, 0,
-		0, 0, 1, 1
-	};
 
 	constructCSR(noiseData, rowPtrs, colIndices);
 

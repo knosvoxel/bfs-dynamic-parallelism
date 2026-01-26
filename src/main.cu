@@ -12,7 +12,8 @@
 #include <FastNoiseLite.h>
 #include <glm/glm.hpp>
 
-#define VERTEX_COUNT 128
+// grid width & height
+#define GRID_SIZE 128
 
 using namespace glm;
 
@@ -28,22 +29,25 @@ void add(int n, float* x, float* y)
 
 void constructCSR(const std::vector<int>& noiseData, std::vector<int>& rowPtrs, std::vector<int>& colIndices) {
 	std::vector<int> gridPosToNodeID(noiseData.size());
-	int currNodeCount = 0;
+	int nodeCount = 0;
 
 	for (int i = 0; i < noiseData.size(); i++)
 	{
 		if (noiseData[i] == 1) {
-			gridPosToNodeID[i] = currNodeCount++;
+			nodeCount++;
+			gridPosToNodeID[i] = nodeCount;
 		}
 	}
 
+	std::cout << "Node Count: " << nodeCount << "\n" << std::endl;
+
 	rowPtrs.push_back(0);
 
-	for (int y = 0; y < VERTEX_COUNT; y++)
+	for (int y = 0; y < GRID_SIZE; y++)
 	{
-		for (int x = 0; x < VERTEX_COUNT; x++)
+		for (int x = 0; x < GRID_SIZE; x++)
 		{
-			int idx = y * VERTEX_COUNT + x;
+			int idx = y * GRID_SIZE + x;
 
 			std::cout << noiseData[idx] << " ";
 
@@ -60,10 +64,10 @@ void constructCSR(const std::vector<int>& noiseData, std::vector<int>& rowPtrs, 
 				{
 					vec2 neighbourPos = vec2(x, y) + neighbours[i];
 
-					if (neighbourPos.x >= 0 && neighbourPos.x < VERTEX_COUNT && 
-						neighbourPos.y >= 0 && neighbourPos.y < VERTEX_COUNT)
+					if (neighbourPos.x >= 0 && neighbourPos.x < GRID_SIZE &&
+						neighbourPos.y >= 0 && neighbourPos.y < GRID_SIZE)
 					{
-						int neighbourIdx = neighbourPos.y * VERTEX_COUNT + neighbourPos.x;
+						int neighbourIdx = neighbourPos.y * GRID_SIZE + neighbourPos.x;
 						if (noiseData[neighbourIdx] == 1)
 						{
 							colIndices.push_back(gridPosToNodeID[neighbourIdx]);
@@ -85,31 +89,32 @@ int main(void)
 	noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
 	noise.SetFractalType(FastNoiseLite::FractalType_FBm);
 
-	std::vector<int> noiseData(VERTEX_COUNT * VERTEX_COUNT);
+	std::vector<int> noiseData(GRID_SIZE * GRID_SIZE);
 	int index = 0;
 
-	for (int y = 0; y < VERTEX_COUNT; y++)
+	for (int y = 0; y < GRID_SIZE; y++)
 	{
-		for (int x = 0; x < VERTEX_COUNT; x++)
+		for (int x = 0; x < GRID_SIZE; x++)
 		{
 			float noiseValue = (noise.GetNoise((float)x , (float)y) + 1.0) / 2.0;
 			noiseValue >= 0.5 ? noiseData[index++] = 1 : noiseData[index++] = 0;
 		}
 	}
 
-	std::ofstream ofs("noise.ppm", std::ios::binary);
+	//std::ofstream ofs("noise.ppm", std::ios::binary);
 
-	std::stringstream ss;
-	ss << "P6\n" << VERTEX_COUNT << " " << VERTEX_COUNT << "\n255\n";
-	std::string imageHeader = ss.str();
-	ofs << imageHeader;
+	//std::stringstream ss;
+	//ss << "P6\n" << GRID_SIZE << " " << GRID_SIZE << "\n255\n";
+	//std::string imageHeader = ss.str();
+	//ofs << imageHeader;
 
-	for (float val : noiseData)
-	{
-		unsigned char color = (unsigned char)(val * 255.0f);
-		ofs << color << color << color;
-	}
-	ofs.close();
+	//for (float val : noiseData)
+	//{
+	//	unsigned char color = (unsigned char)(val * 255.0f);
+	//	ofs << color << color << color;
+	//}
+	//ofs.close();
+
 	std::vector<int> rowPtrs;
 	std::vector<int> colIndices;
 

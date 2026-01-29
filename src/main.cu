@@ -13,19 +13,17 @@
 #include <FastNoiseLite.h>
 #include <glm/glm.hpp>
 
+#include "csr.h"
 #include "utils_cuda.h"
 #include "timer.h"
 
 // grid width & height
-#define GRID_SIZE 1024
+const uint32 GRID_SIZE = 1024;
+
+const ivec2 START_POS = ivec2(100, 200);
+const ivec2 TARGET_POS = ivec2(0, 0);
 
 using namespace glm;
-
-typedef struct CSRGraph {
-	int32* srcPtrs;
-	int32* dst;
-	uint32 numVertices = 0;
-};
 
 __global__
 void bfs(CSRGraph csrGraph, uint32* level, uint32* newVertexVisited, uint32 currLevel)
@@ -42,69 +40,6 @@ void bfs(CSRGraph csrGraph, uint32* level, uint32* newVertexVisited, uint32 curr
 			}
 		}
 	}
-}
-
-void constructCSR(const std::vector<int>& noiseData, CSRGraph& graph) {
-	std::vector<int> gridPosToNodeID(noiseData.size());
-	int nodeCount = 0;
-
-	for (int i = 0; i < noiseData.size(); i++)
-	{
-		if (noiseData[i] == 1) {
-			gridPosToNodeID[i] = nodeCount;
-			nodeCount++;
-
-		}
-	}
-
-	graph.numVertices = nodeCount;
-
-	std::cout << "Node Count: " << nodeCount << "\n" << std::endl;
-
-	std::vector<int> tempSrcPtrs;
-	std::vector<int> tempDst;
-
-	tempSrcPtrs.push_back(0);
-
-	for (int y = 0; y < GRID_SIZE; y++)
-	{
-		for (int x = 0; x < GRID_SIZE; x++)
-		{
-			int idx = y * GRID_SIZE + x;
-
-			if (noiseData[idx] == 1)
-			{
-				vec2 neighbours[4] = { 
-					vec2(0, 1), 
-					vec2(0, -1), 
-					vec2(1, 0), 
-					vec2(-1, 0) 
-				};
-
-				for (int i = 0; i < 4; i++)
-				{
-					vec2 neighbourPos = vec2(x, y) + neighbours[i];
-
-					if (neighbourPos.x >= 0 && neighbourPos.x < GRID_SIZE &&
-						neighbourPos.y >= 0 && neighbourPos.y < GRID_SIZE)
-					{
-						int neighbourIdx = neighbourPos.y * GRID_SIZE + neighbourPos.x;
-						if (noiseData[neighbourIdx] == 1)
-						{
-							tempDst.push_back(gridPosToNodeID[neighbourIdx]);
-						}
-					}
-				}
-				tempSrcPtrs.push_back((int)tempDst.size());
-			}
-		}
-	}
-
-	graph.srcPtrs = new int32[tempSrcPtrs.size()];
-	graph.dst = new int32[tempDst.size()];
-
-	std::copy(tempSrcPtrs.begin(), tempSrcPtrs.end(), graph.srcPtrs);
-	std::copy(tempDst.begin(), tempDst.end(), graph.dst);
 }
 
 std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* levels)
@@ -183,35 +118,38 @@ int main()
 		}
 	}
 
-	CSRGraph graphHost, graphDevice;
-	constructCSR(noiseData, graphHost);
+	CSRGraphHost csr;
+	CSRGraph graphDevice;
+	
+	csr.constructCSR(noiseData, GRID_SIZE);
 
-	graphDevice.numVertices = graphHost.numVertices;
+	graphDevice.numVertices = csr.graph.numVertices;
 
-	GPU_ERRCHK(cudaMalloc(&graphDevice.srcPtrs, (graphHost.numVertices + 1) * sizeof(int32)));
-	GPU_ERRCHK(cudaMalloc(&graphDevice.dst, graphHost.srcPtrs[graphHost.numVertices] * sizeof(int32)));
+	GPU_ERRCHK(cudaMalloc(&graphDevice.srcPtrs, (csr.graph.numVertices + 1) * sizeof(int32)));
+	GPU_ERRCHK(cudaMalloc(&graphDevice.dst, csr.numEdges * sizeof(int32)));
 
-	GPU_ERRCHK(cudaMemcpy(graphDevice.srcPtrs, graphHost.srcPtrs, (graphHost.numVertices + 1) * sizeof(int32), cudaMemcpyHostToDevice));
-	GPU_ERRCHK(cudaMemcpy(graphDevice.dst, graphHost.dst, graphHost.srcPtrs[graphHost.numVertices] * sizeof(int32), cudaMemcpyHostToDevice));
+	GPU_ERRCHK(cudaMemcpy(graphDevice.srcPtrs, csr.graph.srcPtrs, (csr.graph.numVertices + 1) * sizeof(int32), cudaMemcpyHostToDevice));
+	GPU_ERRCHK(cudaMemcpy(graphDevice.dst, csr.graph.dst, csr.numEdges * sizeof(int32), cudaMemcpyHostToDevice));
 
-	uint32* levelHost = new uint32[graphHost.numVertices];
+	uint32* levelHost = new uint32[csr.graph.numVertices];
 
-	for (int32 i = 0; i < graphHost.numVertices; i++)
+	for (int32 i = 0; i < csr.graph.numVertices; i++)
 	{
 		levelHost[i] = UINT_MAX;
 	}
 
 	// target
-	levelHost[400] = 0; // TODO: function that turns 3D position into target
+	uint32 targetNode = csr.getNodeIdFromPos(TARGET_POS);
+	levelHost[targetNode] = 0;
 
 	uint32* levelDevice, * newVertexVisitedDevice = nullptr;
 
-	GPU_ERRCHK(cudaMalloc(&levelDevice, graphHost.numVertices * sizeof(uint32)));
+	GPU_ERRCHK(cudaMalloc(&levelDevice, csr.graph.numVertices * sizeof(uint32)));
 	GPU_ERRCHK(cudaMalloc(&newVertexVisitedDevice, sizeof(uint32)));
-	GPU_ERRCHK(cudaMemcpy(levelDevice, levelHost, graphHost.numVertices * sizeof(uint32), cudaMemcpyHostToDevice));
+	GPU_ERRCHK(cudaMemcpy(levelDevice, levelHost, csr.graph.numVertices * sizeof(uint32), cudaMemcpyHostToDevice));
 
 	int32 threadsPerBlock = 1024;
-	int32 blocksPerGrid = (graphHost.numVertices + threadsPerBlock - 1) / threadsPerBlock;
+	int32 blocksPerGrid = (csr.graph.numVertices + threadsPerBlock - 1) / threadsPerBlock;
 
 	dim3 numThreads(threadsPerBlock, 1, 1);
 	dim3 numBlocks(blocksPerGrid, 1, 1);
@@ -229,7 +167,7 @@ int main()
 
 		currLevel++;
 
-		if (currLevel > graphHost.numVertices) break;
+		if (currLevel > csr.graph.numVertices) break;
 	}
 
 	std::cout << "BFS finished after " << currLevel - 1 << " levels." << std::endl;
@@ -237,13 +175,14 @@ int main()
 	// Wait for GPU to finish before accessing on host
 	GPU_ERRCHK(cudaDeviceSynchronize());
 
-	GPU_ERRCHK(cudaMemcpy(levelHost, levelDevice , graphHost.numVertices * sizeof(uint32), cudaMemcpyDeviceToHost));
+	GPU_ERRCHK(cudaMemcpy(levelHost, levelDevice , csr.graph.numVertices * sizeof(uint32), cudaMemcpyDeviceToHost));
 
-
-	std::vector<uint32> path = getPath(11000, graphHost, levelHost);
+	// start
+	uint32 startNode = csr.getNodeIdFromPos(START_POS);
+	std::vector<uint32> path = getPath(startNode, csr.graph, levelHost);
 
 	std::vector<int32> nodeToGridIndex;
-	nodeToGridIndex.reserve(graphHost.numVertices);
+	nodeToGridIndex.reserve(csr.graph.numVertices);
 
 	for (int i = 0; i < noiseData.size(); i++) {
 		if (noiseData[i] == 1) {
@@ -286,8 +225,6 @@ int main()
 	cudaFree(graphDevice.dst);
 	GPU_ERRCHK(cudaGetLastError());
 
-	delete[] graphHost.srcPtrs;
-	delete[] graphHost.dst;
 	delete[] levelHost;
 
 	std::cout << timer.ToString("BFS total") << std::endl;

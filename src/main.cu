@@ -17,6 +17,14 @@
 #include "utils_cuda.h"
 #include "timer.h"
 
+enum BFSAlgorithm
+{
+	ALGO_BFS,
+	ALGO_BFS_FRONTIER
+};
+
+BFSAlgorithm activeAlgorithm = BFSAlgorithm::ALGO_BFS_FRONTIER;
+
 // grid width & height
 const uint32 GRID_SIZE = 1024;
 
@@ -29,14 +37,37 @@ __global__
 void bfs(CSRGraph csrGraph, uint32* level, uint32* newVertexVisited, uint32 currLevel)
 {
 	uint32 vertex = blockIdx.x * blockDim.x + threadIdx.x;
-	if (vertex < csrGraph.numVertices) {
-		if (level[vertex] == currLevel - 1) {
-			for (uint32 edge = csrGraph.srcPtrs[vertex]; edge < csrGraph.srcPtrs[vertex + 1]; ++edge) {
+	if (vertex < csrGraph.numVertices) 
+	{
+		if (level[vertex] == currLevel - 1) 
+		{
+			for (uint32 edge = csrGraph.srcPtrs[vertex]; edge < csrGraph.srcPtrs[vertex + 1]; ++edge) 
+			{
 				uint32 neighbour = csrGraph.dst[edge];
-				if (level[neighbour] == UINT_MAX) {
+				if (level[neighbour] == UINT_MAX) 
+				{
 					level[neighbour] = currLevel;
 					*newVertexVisited = 1;
 				}
+			}
+		}
+	}
+}
+
+__global__
+void bfsFrontier(CSRGraph csrGraph, uint32* level, uint32* prevFrontier, uint32* currFrontier, uint32 numPrevFrontier, uint32* numCurrFrontier, uint32 currLevel)
+{
+	uint32 i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < numPrevFrontier)
+	{
+		uint32 vertex = prevFrontier[i];
+		for (uint32 edge = csrGraph.srcPtrs[vertex]; edge < csrGraph.srcPtrs[vertex + 1]; ++edge)
+		{
+			uint32 neighbour = csrGraph.dst[edge];
+			if (atomicCAS(&level[neighbour], UINT_MAX, currLevel) == UINT_MAX) 
+			{
+				uint32 currFrontierIdx = atomicAdd(numCurrFrontier, 1);
+				currFrontier[currFrontierIdx] = neighbour;
 			}
 		}
 	}
@@ -46,7 +77,8 @@ std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* l
 {
 	std::vector<uint32> path;
 
-	if (levels[startingNode] == UINT_MAX) {
+	if (levels[startingNode] == UINT_MAX) 
+	{
 		std::cout << "No path found!" << std::endl;
 		return path;
 	}
@@ -56,7 +88,8 @@ std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* l
 
 	std::cout << "Starting level: " << levels[currNode] << std::endl;
 
-	while (levels[currNode] != 0) {
+	while (levels[currNode] != 0) 
+	{
 		uint32 currentLevel = levels[currNode];
 		bool found = false;
 
@@ -83,7 +116,8 @@ std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* l
 		found = true;
 		//break;
 
-		if (!found) {
+		if (!found) 
+		{
 			std::cout << "No further path progression possible!" << std::endl;
 			return path;
 		}
@@ -142,50 +176,118 @@ int main()
 	uint32 targetNode = csr.getNodeIdFromPos(TARGET_POS);
 	levelHost[targetNode] = 0;
 
-	uint32* levelDevice, * newVertexVisitedDevice = nullptr;
-
+	uint32* levelDevice;
 	GPU_ERRCHK(cudaMalloc(&levelDevice, csr.graph.numVertices * sizeof(uint32)));
-	GPU_ERRCHK(cudaMalloc(&newVertexVisitedDevice, sizeof(uint32)));
 	GPU_ERRCHK(cudaMemcpy(levelDevice, levelHost, csr.graph.numVertices * sizeof(uint32), cudaMemcpyHostToDevice));
 
 	int32 threadsPerBlock = 1024;
-	int32 blocksPerGrid = (csr.graph.numVertices + threadsPerBlock - 1) / threadsPerBlock;
-
 	dim3 numThreads(threadsPerBlock, 1, 1);
-	dim3 numBlocks(blocksPerGrid, 1, 1);
-
-	uint32 newVertexVisitedHost = 1;
 	uint32 currLevel = 1;
 
-	while (newVertexVisitedHost > 0) {
-		newVertexVisitedHost = 0;
-		GPU_ERRCHK(cudaMemcpy(newVertexVisitedDevice, &newVertexVisitedHost, sizeof(uint32), cudaMemcpyHostToDevice));
+	switch (activeAlgorithm)
+	{
+		case BFSAlgorithm::ALGO_BFS:
+		{
+			uint32* newVertexVisitedDevice;
+			GPU_ERRCHK(cudaMalloc(&newVertexVisitedDevice, sizeof(uint32)));
 
-		bfs << <numBlocks, numThreads >> > (graphDevice, levelDevice, newVertexVisitedDevice, currLevel);
+			int32 blocksPerGrid = (csr.graph.numVertices + threadsPerBlock - 1) / threadsPerBlock;
+			dim3 numBlocks(blocksPerGrid, 1, 1);
 
-		GPU_ERRCHK(cudaMemcpy(&newVertexVisitedHost, newVertexVisitedDevice, sizeof(uint32), cudaMemcpyDeviceToHost));
+			uint32 newVertexVisitedHost = 1;
 
-		currLevel++;
+			while (newVertexVisitedHost > 0)
+			{
+				newVertexVisitedHost = 0;
+				GPU_ERRCHK(cudaMemcpy(newVertexVisitedDevice, &newVertexVisitedHost, sizeof(uint32), cudaMemcpyHostToDevice));
 
-		if (currLevel > csr.graph.numVertices) break;
+				bfs << <numBlocks, numThreads >> > (graphDevice, levelDevice, newVertexVisitedDevice, currLevel);
+
+				GPU_ERRCHK(cudaMemcpy(&newVertexVisitedHost, newVertexVisitedDevice, sizeof(uint32), cudaMemcpyDeviceToHost));
+
+				currLevel++;
+
+				if (currLevel > csr.graph.numVertices) break;
+			}
+
+			std::cout << "BFS finished after " << currLevel - 1 << " levels." << std::endl;
+
+			// Wait for GPU to finish before accessing on host
+			GPU_ERRCHK(cudaDeviceSynchronize());
+			GPU_ERRCHK(cudaMemcpy(levelHost, levelDevice, csr.graph.numVertices * sizeof(uint32), cudaMemcpyDeviceToHost));
+
+			cudaFree(newVertexVisitedDevice);
+		}
+			break;
+
+		case BFSAlgorithm::ALGO_BFS_FRONTIER:
+		{
+			uint32* currFrontierDevice, * nextFrontierDevice, * nextFrontierCountDevice;
+
+			GPU_ERRCHK(cudaMalloc(&currFrontierDevice, csr.graph.numVertices * sizeof(uint32)));
+			GPU_ERRCHK(cudaMalloc(&nextFrontierDevice, csr.graph.numVertices * sizeof(uint32)));
+			GPU_ERRCHK(cudaMalloc(&nextFrontierCountDevice, sizeof(uint32)));
+
+			GPU_ERRCHK(cudaMemcpy(currFrontierDevice, &targetNode, sizeof(uint32), cudaMemcpyHostToDevice));
+
+			uint32 numFrontierElements = 1;
+
+			while (numFrontierElements > 0)
+			{
+				GPU_ERRCHK(cudaMemset(nextFrontierCountDevice, 0, sizeof(uint32)));
+
+				dim3 currNumThreads;
+				dim3 currNumBlocks;
+
+				if (numFrontierElements <= 1024)
+				{
+					currNumThreads = dim3(numFrontierElements, 1, 1);
+					currNumBlocks = dim3(1, 1, 1);
+				}
+				else {
+					currNumThreads = numThreads;
+					int32 frontierBlocks = (numFrontierElements + threadsPerBlock - 1) / threadsPerBlock;
+					dim3 numBlocks(frontierBlocks, 1, 1);
+	
+				}
+
+				bfsFrontier << <currNumBlocks, currNumThreads >> > (graphDevice, levelDevice, currFrontierDevice, nextFrontierDevice, numFrontierElements, nextFrontierCountDevice, currLevel);
+
+				GPU_ERRCHK(cudaMemcpy(&numFrontierElements, nextFrontierCountDevice, sizeof(uint32), cudaMemcpyDeviceToHost));
+
+				std::swap(currFrontierDevice, nextFrontierDevice);
+
+				currLevel++;
+
+				if (currLevel > csr.graph.numVertices) break;
+			}
+
+			std::cout << "Frontier BFS finished after " << currLevel - 1 << " levels." << std::endl;
+
+			// Wait for GPU to finish before accessing on host
+			GPU_ERRCHK(cudaDeviceSynchronize());
+			GPU_ERRCHK(cudaMemcpy(levelHost, levelDevice, csr.graph.numVertices * sizeof(uint32), cudaMemcpyDeviceToHost));
+
+			cudaFree(currFrontierDevice);
+			cudaFree(nextFrontierDevice);
+			cudaFree(nextFrontierCountDevice);
+		}
+			break;
+		default:
+			break;
 	}
 
-	std::cout << "BFS finished after " << currLevel - 1 << " levels." << std::endl;
-
-	// Wait for GPU to finish before accessing on host
-	GPU_ERRCHK(cudaDeviceSynchronize());
-
-	GPU_ERRCHK(cudaMemcpy(levelHost, levelDevice , csr.graph.numVertices * sizeof(uint32), cudaMemcpyDeviceToHost));
-
-	// start
+	// start node
 	uint32 startNode = csr.getNodeIdFromPos(START_POS);
 	std::vector<uint32> path = getPath(startNode, csr.graph, levelHost);
 
 	std::vector<int32> nodeToGridIndex;
 	nodeToGridIndex.reserve(csr.graph.numVertices);
 
-	for (int i = 0; i < noiseData.size(); i++) {
-		if (noiseData[i] == 1) {
+	for (int i = 0; i < noiseData.size(); i++) 
+	{
+		if (noiseData[i] == 1) 
+		{
 			nodeToGridIndex.push_back(i);
 		}
 	}
@@ -200,8 +302,10 @@ int main()
 		rgbImage[i * 3 + 2] = val;
 	}
 
-	for (int32 nodeID : path) {
-		if (nodeID < nodeToGridIndex.size()) {
+	for (int32 nodeID : path) 
+	{
+		if (nodeID < nodeToGridIndex.size()) 
+		{
 			int gridIdx = nodeToGridIndex[nodeID];
 			rgbImage[gridIdx * 3] = 255;
 			rgbImage[gridIdx * 3 + 1] = 0;
@@ -220,7 +324,6 @@ int main()
 
 	// Free memory
 	cudaFree(levelDevice);
-	cudaFree(newVertexVisitedDevice);
 	cudaFree(graphDevice.srcPtrs);
 	cudaFree(graphDevice.dst);
 	GPU_ERRCHK(cudaGetLastError());

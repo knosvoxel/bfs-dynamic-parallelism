@@ -14,9 +14,10 @@
 #include <glm/glm.hpp>
 
 #include "utils_cuda.h"
+#include "timer.h"
 
 // grid width & height
-#define GRID_SIZE 128
+#define GRID_SIZE 1024
 
 using namespace glm;
 
@@ -161,8 +162,11 @@ std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* l
 	return path;
 }
 
-int main(void)
+int main()
 {
+	Timer timer;
+	timer.Reset();
+
 	FastNoiseLite noise;
 	noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
 	noise.SetFractalType(FastNoiseLite::FractalType_FBm);
@@ -285,6 +289,8 @@ int main(void)
 	delete[] graphHost.srcPtrs;
 	delete[] graphHost.dst;
 	delete[] levelHost;
+
+	std::cout << timer.ToString("BFS total") << std::endl;
 
 	return 0;
 }

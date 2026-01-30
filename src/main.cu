@@ -17,16 +17,19 @@
 #include "utils_cuda.h"
 #include "timer.h"
 
+#define LOCAL_FRONTIER_CAPACITY 1024
+
 enum BFSAlgorithm
 {
 	ALGO_BFS,
-	ALGO_BFS_FRONTIER
+	ALGO_BFS_FRONTIER,
+	ALGO_BFS_SHARED
 };
 
-BFSAlgorithm activeAlgorithm = BFSAlgorithm::ALGO_BFS_FRONTIER;
+BFSAlgorithm activeAlgorithm = BFSAlgorithm::ALGO_BFS;
 
 // grid width & height
-const uint32 GRID_SIZE = 1024;
+const uint32 GRID_SIZE = 2048;
 
 const ivec2 START_POS = ivec2(100, 200);
 const ivec2 TARGET_POS = ivec2(0, 0);
@@ -70,6 +73,56 @@ void bfsFrontier(CSRGraph csrGraph, uint32* level, uint32* prevFrontier, uint32*
 				currFrontier[currFrontierIdx] = neighbour;
 			}
 		}
+	}
+}
+
+__global__ 
+void bfsShared(CSRGraph csrGraph, uint32* level, uint32* prevFrontier, uint32* currFrontier, uint32 numPrevFrontier, uint32* numCurrFrontier, uint32 currLevel)
+{
+	__shared__ uint32 currFrontier_s[LOCAL_FRONTIER_CAPACITY];
+	__shared__ uint32 numCurrFrontier_s;
+	if (threadIdx.x == 0) 
+	{
+		numCurrFrontier_s = 0;
+	}
+	__syncthreads();
+
+	uint32 i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < numPrevFrontier)
+	{
+		uint32 vertex = prevFrontier[i];
+		for (uint32 edge = csrGraph.srcPtrs[vertex]; edge < csrGraph.srcPtrs[vertex + 1]; ++edge)
+		{
+			uint32 neighbour = csrGraph.dst[edge];
+			if (atomicCAS(&level[neighbour], UINT_MAX, currLevel) == UINT_MAX) 
+			{
+				uint32 currFrontierIdx_s = atomicAdd(&numCurrFrontier_s, 1);
+				if (currFrontierIdx_s < LOCAL_FRONTIER_CAPACITY)
+				{
+					currFrontier_s[currFrontierIdx_s] = neighbour;
+				}
+				else
+				{
+					numCurrFrontier_s = LOCAL_FRONTIER_CAPACITY;
+					uint32 currFrontierIdx = atomicAdd(numCurrFrontier, 1);
+					currFrontier[currFrontierIdx] = neighbour;
+				}
+			}
+		}
+	}
+	__syncthreads();
+
+	__shared__ uint32 currFrontierStartIdx;
+	if (threadIdx.x == 0) 
+	{
+		currFrontierStartIdx = atomicAdd(numCurrFrontier, numCurrFrontier_s);
+	}
+	__syncthreads();
+
+	for (uint32 currFrontierIdx_s = threadIdx.x; currFrontierIdx_s < numCurrFrontier_s; currFrontierIdx_s += blockDim.x)
+	{
+		uint32 currFrontierIdx = currFrontierStartIdx + currFrontierIdx_s;
+		currFrontier[currFrontierIdx] = currFrontier_s[currFrontierIdx_s];
 	}
 }
 
@@ -133,9 +186,6 @@ std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* l
 
 int main()
 {
-	Timer timer;
-	timer.Reset();
-
 	FastNoiseLite noise;
 	noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
 	noise.SetFractalType(FastNoiseLite::FractalType_FBm);
@@ -147,8 +197,9 @@ int main()
 	{
 		for (int x = 0; x < GRID_SIZE; x++)
 		{
-			float noiseValue = (noise.GetNoise((float)x , (float)y) + 1.0) / 2.0;
-			noiseValue >= 0.5 ? noiseData[index++] = 1 : noiseData[index++] = 0;
+			//float noiseValue = (noise.GetNoise((float)x , (float)y) + 1.0) / 2.0;
+			//noiseValue >= 0.5 ? noiseData[index++] = 1 : noiseData[index++] = 0;
+			noiseData[index++] = 1;
 		}
 	}
 
@@ -184,6 +235,9 @@ int main()
 	dim3 numThreads(threadsPerBlock, 1, 1);
 	uint32 currLevel = 1;
 
+	Timer timer;
+	timer.Reset();
+
 	switch (activeAlgorithm)
 	{
 		case BFSAlgorithm::ALGO_BFS:
@@ -214,6 +268,9 @@ int main()
 
 			// Wait for GPU to finish before accessing on host
 			GPU_ERRCHK(cudaDeviceSynchronize());
+
+			std::cout << timer.ToString("BFS") << std::endl;
+
 			GPU_ERRCHK(cudaMemcpy(levelHost, levelDevice, csr.graph.numVertices * sizeof(uint32), cudaMemcpyDeviceToHost));
 
 			cudaFree(newVertexVisitedDevice);
@@ -266,6 +323,9 @@ int main()
 
 			// Wait for GPU to finish before accessing on host
 			GPU_ERRCHK(cudaDeviceSynchronize());
+
+			std::cout << timer.ToString("Frontier BFS") << std::endl;
+
 			GPU_ERRCHK(cudaMemcpy(levelHost, levelDevice, csr.graph.numVertices * sizeof(uint32), cudaMemcpyDeviceToHost));
 
 			cudaFree(currFrontierDevice);
@@ -273,6 +333,62 @@ int main()
 			cudaFree(nextFrontierCountDevice);
 		}
 			break;
+		case BFSAlgorithm::ALGO_BFS_SHARED:
+		{
+			uint32* currFrontierDevice, * nextFrontierDevice, * nextFrontierCountDevice;
+
+			GPU_ERRCHK(cudaMalloc(&currFrontierDevice, csr.graph.numVertices * sizeof(uint32)));
+			GPU_ERRCHK(cudaMalloc(&nextFrontierDevice, csr.graph.numVertices * sizeof(uint32)));
+			GPU_ERRCHK(cudaMalloc(&nextFrontierCountDevice, sizeof(uint32)));
+
+			GPU_ERRCHK(cudaMemcpy(currFrontierDevice, &targetNode, sizeof(uint32), cudaMemcpyHostToDevice));
+
+			uint32 numFrontierElements = 1;
+
+			while (numFrontierElements > 0)
+			{
+				GPU_ERRCHK(cudaMemset(nextFrontierCountDevice, 0, sizeof(uint32)));
+
+				dim3 currNumThreads;
+				dim3 currNumBlocks;
+
+				if (numFrontierElements <= 1024)
+				{
+					currNumThreads = dim3(numFrontierElements, 1, 1);
+					currNumBlocks = dim3(1, 1, 1);
+				}
+				else {
+					currNumThreads = numThreads;
+					int32 frontierBlocks = (numFrontierElements + threadsPerBlock - 1) / threadsPerBlock;
+					dim3 numBlocks(frontierBlocks, 1, 1);
+
+				}
+
+				bfsShared << <currNumBlocks, currNumThreads >> > (graphDevice, levelDevice, currFrontierDevice, nextFrontierDevice, numFrontierElements, nextFrontierCountDevice, currLevel);
+
+				GPU_ERRCHK(cudaMemcpy(&numFrontierElements, nextFrontierCountDevice, sizeof(uint32), cudaMemcpyDeviceToHost));
+
+				std::swap(currFrontierDevice, nextFrontierDevice);
+
+				currLevel++;
+
+				if (currLevel > csr.graph.numVertices) break;
+			}
+
+			std::cout << "Shared BFS finished after " << currLevel - 1 << " levels." << std::endl;
+
+			// Wait for GPU to finish before accessing on host
+			GPU_ERRCHK(cudaDeviceSynchronize());
+
+			std::cout << timer.ToString("Shared BFS") << std::endl;
+
+			GPU_ERRCHK(cudaMemcpy(levelHost, levelDevice, csr.graph.numVertices * sizeof(uint32), cudaMemcpyDeviceToHost));
+
+			cudaFree(currFrontierDevice);
+			cudaFree(nextFrontierDevice);
+			cudaFree(nextFrontierCountDevice);
+		}
+		break;
 		default:
 			break;
 	}
@@ -329,8 +445,6 @@ int main()
 	GPU_ERRCHK(cudaGetLastError());
 
 	delete[] levelHost;
-
-	std::cout << timer.ToString("BFS total") << std::endl;
 
 	return 0;
 }

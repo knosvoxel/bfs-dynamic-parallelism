@@ -7,6 +7,8 @@
 #include <iostream>
 #include <math.h>
 
+#include <deque>
+
 #include <sstream>
 #include <string>
 
@@ -21,13 +23,15 @@
 
 enum BFSAlgorithm
 {
-	ALGO_BFS,
+	ALGO_BFS_CPU,
+	ALGO_BFS_CPU_QUEUE,
+	ALGO_BFS_GPU,
 	ALGO_BFS_FRONTIER,
 	ALGO_BFS_SHARED,
 	ALGO_BFS_DYNAMIC_PARALLEL
 };
 
-BFSAlgorithm activeAlgorithm = BFSAlgorithm::ALGO_BFS_DYNAMIC_PARALLEL;
+BFSAlgorithm activeAlgorithm = BFSAlgorithm::ALGO_BFS_CPU_QUEUE;
 
 // grid width & height
 const uint32 GRID_SIZE = 2048;
@@ -321,7 +325,65 @@ int main()
 
 	switch (activeAlgorithm)
 	{
-		case BFSAlgorithm::ALGO_BFS:
+		case BFSAlgorithm::ALGO_BFS_CPU:
+		{
+			bool changed = true;
+			
+			while (changed) {
+				changed = false;
+
+				for (uint32 v = 0; v < csr.graph.numVertices; v++) {
+					if (levelHost[v] == currLevel - 1) {
+						for (uint32 edge = csr.graph.srcPtrs[v]; edge < csr.graph.srcPtrs[v + 1]; ++edge) {
+							uint32 neighbor = csr.graph.dst[edge];
+
+							if (levelHost[neighbor] == UINT_MAX) {
+								levelHost[neighbor] = currLevel;
+								changed = true;
+							}
+						}
+					}
+				}
+				currLevel++;
+
+				if (currLevel > csr.graph.numVertices) break;
+			}
+			std::cout << "CPU BFS finished after " << currLevel << " levels." << std::endl;
+
+			std::cout << timer.ToString("BFS CPU") << std::endl;
+		}
+		break;
+		case BFSAlgorithm::ALGO_BFS_CPU_QUEUE:
+		{
+			std::deque<uint32> frontier;
+
+			frontier.push_back(targetNode);
+
+			uint32 lastLevel = 0;
+
+			while (!frontier.empty()) {
+				uint32 v = frontier.front();
+				frontier.pop_front();
+
+				uint32 neighborLevel = levelHost[v] + 1;
+
+				for (uint32 edge = csr.graph.srcPtrs[v]; edge < csr.graph.srcPtrs[v + 1]; ++edge) {
+					uint32 neighbor = csr.graph.dst[edge];
+
+					if (levelHost[neighbor] == UINT_MAX) {
+						levelHost[neighbor] = neighborLevel;
+						lastLevel = std::max(lastLevel, neighborLevel);
+
+						frontier.push_back(neighbor);
+					}
+				}
+			}
+			std::cout << "Optimized CPU BFS finished. Max level: " << lastLevel + 1 << std::endl;
+
+			std::cout << timer.ToString("BFS CPU QUEUE") << std::endl;
+		}
+		break;
+		case BFSAlgorithm::ALGO_BFS_GPU:
 		{
 			uint32* newVertexVisitedDevice;
 			GPU_ERRCHK(cudaMalloc(&newVertexVisitedDevice, sizeof(uint32)));
@@ -350,14 +412,13 @@ int main()
 
 			std::cout << "BFS finished after " << currLevel - 1 << " levels." << std::endl;
 
-			std::cout << timer.ToString("BFS") << std::endl;
+			std::cout << timer.ToString("BFS GPU") << std::endl;
 
 			GPU_ERRCHK(cudaMemcpy(levelHost, levelDevice, csr.graph.numVertices * sizeof(uint32), cudaMemcpyDeviceToHost));
 
 			cudaFree(newVertexVisitedDevice);
 		}
-			break;
-
+		break;
 		case BFSAlgorithm::ALGO_BFS_FRONTIER:
 		{
 			uint32* currFrontierDevice, * nextFrontierDevice, * nextFrontierCountDevice;
@@ -413,7 +474,7 @@ int main()
 			cudaFree(nextFrontierDevice);
 			cudaFree(nextFrontierCountDevice);
 		}
-			break;
+		break;
 		case BFSAlgorithm::ALGO_BFS_SHARED:
 		{
 			uint32* currFrontierDevice, * nextFrontierDevice, * nextFrontierCountDevice;

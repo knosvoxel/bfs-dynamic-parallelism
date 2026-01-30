@@ -2,6 +2,8 @@
 cmake_minimum_required(VERSION 4.0)
 project(pmpp-project LANGUAGES CXX CUDA)
 
+set(CMAKE_CUDA_RUNTIME_LIBRARY Shared)
+
 # Source files
 set(SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib")
@@ -15,12 +17,20 @@ set(CMAKE_CUDA_STANDARD 20)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(CUDA_NVCC_FLAGS
+	-O3 -gencode -arch=sm_80 -rdc=true -lcudadevrt
+)
+
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
 	set(CMAKE_CUDA_ARCHITECTURES "native")
 endif()
 
 # Executable definition and properties
 add_executable(${PROJECT_NAME} ${SOURCES})
+
+set_target_properties(${PROJECT_NAME} PROPERTIES
+	CUDA_SEPARABLE_COMPILATION ON
+)
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
 	"${SRC_DIR}"
@@ -30,6 +40,9 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 	${CUDAToolkit_INCLUDE_DIRS}
 )
 
-find_package(CUDAToolkit)
+find_package(CUDAToolkit REQUIRED)
 
-target_link_libraries(${PROJECT_NAME} PRIVATE CUDA::cudart)
+target_link_libraries(${PROJECT_NAME} PRIVATE 
+	CUDA::cudart
+	${CUDA_cudadevrt_LIBRARY}
+)

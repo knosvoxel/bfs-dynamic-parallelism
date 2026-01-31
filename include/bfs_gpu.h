@@ -58,9 +58,9 @@ void runBFSGPU(CSRGraph& graphDevice, uint32* levelDevice, uint32* levelHost, ui
 
 	std::cout << "BFS finished after " << currLevel - 1 << " levels." << std::endl;
 
-	std::cout << timer.ToString("BFS GPU") << std::endl;
-
 	GPU_ERRCHK(cudaMemcpy(levelHost, levelDevice, numVertices * sizeof(uint32), cudaMemcpyDeviceToHost));
+
+	std::cout << timer.ToString("BFS GPU") << std::endl;
 
 	cudaFree(newVertexVisitedDevice);
 }

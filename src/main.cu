@@ -21,7 +21,7 @@
 #include "bfs_gpu.h"
 #include "bfs_frontier.h"
 #include "bfs_shared.h"
-#include "bfs_dynamic.h"
+#include "bfs_dynamic_parallel.h"
 
 enum BFSAlgorithm
 {
@@ -38,7 +38,7 @@ BFSAlgorithm activeAlgorithm = BFSAlgorithm::ALGO_BFS_DYNAMIC_PARALLEL;
 // grid width & height
 const uint32 GRID_SIZE = 2048;
 
-const ivec2 START_POS = ivec2(100, 200);
+const ivec2 START_POS = ivec2(1500, 1350);
 const ivec2 TARGET_POS = ivec2(0, 0);
 
 using namespace glm;

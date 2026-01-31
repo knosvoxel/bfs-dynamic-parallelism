@@ -74,9 +74,9 @@ void runBFSFrontier(CSRGraph& graphDevice, uint32* levelDevice, uint32* levelHos
 
 	std::cout << "Frontier BFS finished after " << currLevel - 1 << " levels." << std::endl;
 
-	std::cout << timer.ToString("Frontier BFS") << std::endl;
-
 	GPU_ERRCHK(cudaMemcpy(levelHost, levelDevice, numVertices * sizeof(uint32), cudaMemcpyDeviceToHost));
+
+	std::cout << timer.ToString("Frontier BFS") << std::endl;
 
 	cudaFree(currFrontierDevice);
 	cudaFree(nextFrontierDevice);

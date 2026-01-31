@@ -112,9 +112,9 @@ void runBFSDynamicParallel(CSRGraph& graphDevice, uint32* levelDevice, uint32* l
 
 	std::cout << "Dynamic Parallel BFS finished after " << finalLevelHost << " levels." << std::endl;
 
-	std::cout << timer.ToString("Dynamic Parallel BFS") << std::endl;
-
 	GPU_ERRCHK(cudaMemcpy(levelHost, levelDevice, numVertices * sizeof(uint32), cudaMemcpyDeviceToHost));
+
+	std::cout << timer.ToString("Dynamic Parallel BFS") << std::endl;
 
 	cudaFree(currFrontierDevice);
 	cudaFree(nextFrontierDevice);

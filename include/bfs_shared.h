@@ -106,9 +106,9 @@ void runBFSShared(CSRGraph& graphDevice, uint32* levelDevice, uint32* levelHost,
 
 	std::cout << "Shared BFS finished after " << currLevel - 1 << " levels." << std::endl;
 
-	std::cout << timer.ToString("Shared BFS") << std::endl;
-
 	GPU_ERRCHK(cudaMemcpy(levelHost, levelDevice, numVertices * sizeof(uint32), cudaMemcpyDeviceToHost));
+
+	std::cout << timer.ToString("Shared BFS") << std::endl;
 
 	cudaFree(currFrontierDevice);
 	cudaFree(nextFrontierDevice);

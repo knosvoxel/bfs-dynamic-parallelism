@@ -38,8 +38,6 @@ struct CSRGraphHost {
 
 		graph.numVertices = nodeCount;
 
-		std::cout << "Node Count: " << nodeCount << "\n" << std::endl;
-
 		std::vector<int32> tempSrcPtrs;
 		std::vector<int32> tempDst;
 		tempSrcPtrs.reserve(nodeCount + 1);
@@ -86,6 +84,11 @@ struct CSRGraphHost {
 		std::copy(tempDst.begin(), tempDst.end(), graph.dst);
 
 		numEdges = graph.srcPtrs[graph.numVertices];
+		
+		std::cout << "Node Count: " << nodeCount << std::endl;
+		std::cout << "Edge Count: " << numEdges << "\n" << std::endl;
+
+
 	}
 
 	int getNodeIdFromPos(ivec2 pos) {

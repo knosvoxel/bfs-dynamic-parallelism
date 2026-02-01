@@ -45,7 +45,7 @@ const uint32 GRID_SIZE = 2048;
 const ivec2 START_POS = ivec2(1500, 1350);
 const ivec2 TARGET_POS = ivec2(0, 0);
 
-int32 numIterations = 10;
+int32 numIterations = 100;
 float32 totalDuration = 0.0;
 std::vector<float32> meshingDurations;
 float32 minDuration = UINT_MAX;
@@ -141,7 +141,7 @@ int main()
 	// target
 	uint32 targetNode = csr.getNodeIdFromPos(TARGET_POS);
 
-	std::cout << "Target position: (" << TARGET_POS.x << " " << TARGET_POS.y << ")" << std::endl;
+	std::cout << "Target position: (" << TARGET_POS.x << " " << TARGET_POS.y << ")" << "\n" << std::endl;
 
 	uint32* levelHost = new uint32[csr.graph.numVertices];
 	uint32* levelDevice;

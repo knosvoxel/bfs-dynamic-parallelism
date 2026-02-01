@@ -23,6 +23,8 @@
 #include "bfs_shared.h"
 #include "bfs_dynamic_parallel.h"
 
+using namespace glm;
+
 enum BFSAlgorithm
 {
 	ALGO_BFS_CPU,
@@ -41,7 +43,8 @@ const uint32 GRID_SIZE = 2048;
 const ivec2 START_POS = ivec2(1500, 1350);
 const ivec2 TARGET_POS = ivec2(0, 0);
 
-using namespace glm;
+int32 numIterations = 10;
+float totalTime = 0.0f;
 
 std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* levels)
 {
@@ -56,7 +59,7 @@ std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* l
 	uint32 currNode = startingNode;
 	path.push_back(currNode);
 
-	std::cout << "Starting level: " << levels[currNode] << std::endl;
+	std::cout << "Starting level: " << levels[currNode] << "\n" << std::endl;
 
 	while (levels[currNode] != 0) 
 	{
@@ -71,11 +74,7 @@ std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* l
 
 			if (levels[neighbour] < currentLevel)
 			{
-				//currNode = neighbour;
-				//path.push_back(currNode);
 				possibleEdges.push_back(neighbour);
-				//found = true;
-				//break;
 			}
 		}
 
@@ -84,7 +83,6 @@ std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* l
 		currNode = selectedEdge;
 		path.push_back(selectedEdge);
 		found = true;
-		//break;
 
 		if (!found) 
 		{
@@ -93,7 +91,7 @@ std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* l
 		}
 	}
 
-	std::cout << "Path found: ";
+	std::cout << "Calculated path: " << std::endl;
 	for (uint32 node : path) 
 		std::cout << node << " ";
 	std::cout << std::endl;
@@ -133,29 +131,36 @@ int main()
 	GPU_ERRCHK(cudaMemcpy(graphDevice.srcPtrs, csr.graph.srcPtrs, (csr.graph.numVertices + 1) * sizeof(int32), cudaMemcpyHostToDevice));
 	GPU_ERRCHK(cudaMemcpy(graphDevice.dst, csr.graph.dst, csr.numEdges * sizeof(int32), cudaMemcpyHostToDevice));
 
-	uint32* levelHost = new uint32[csr.graph.numVertices];
-
-	for (int32 i = 0; i < csr.graph.numVertices; i++)
-	{
-		levelHost[i] = UINT_MAX;
-	}
-
 	// target
 	uint32 targetNode = csr.getNodeIdFromPos(TARGET_POS);
-	levelHost[targetNode] = 0;
 
+	std::cout << "Target position: (" << TARGET_POS.x << " " << TARGET_POS.y << ")" << std::endl;
+
+	uint32* levelHost = new uint32[csr.graph.numVertices];
 	uint32* levelDevice;
 	GPU_ERRCHK(cudaMalloc(&levelDevice, csr.graph.numVertices * sizeof(uint32)));
-	GPU_ERRCHK(cudaMemcpy(levelDevice, levelHost, csr.graph.numVertices * sizeof(uint32), cudaMemcpyHostToDevice));
 
-	uint32 currLevel = 1;
 	uint32 numVertices = csr.graph.numVertices;
 
 	Timer timer;
-	timer.Reset();
 
-	switch (activeAlgorithm)
-	{
+	for (int currIteration = 0; currIteration <= numIterations; ++currIteration) {
+		for (int32 i = 0; i < csr.graph.numVertices; i++) {
+			levelHost[i] = UINT_MAX;
+		}
+		levelHost[targetNode] = 0;
+
+		GPU_ERRCHK(cudaMemcpy(levelDevice, levelHost, csr.graph.numVertices * sizeof(uint32), cudaMemcpyHostToDevice));
+
+		uint32 currLevel = 1;
+
+		// first iteration is warm up run
+		if (currIteration > 0) {
+			timer.Reset();
+		}
+
+		switch (activeAlgorithm)
+		{
 		case BFSAlgorithm::ALGO_BFS_CPU:
 			runBFSCPU(csr, levelHost, currLevel, timer);
 			break;
@@ -176,8 +181,18 @@ int main()
 			break;
 		default:
 			break;
+		}
+
+		if (currIteration > 0)
+		{
+			totalTime += timer.ElapsedMs();
+		}
 	}
 
+	float32 average = totalTime / numIterations;
+	std::cout << "\nAverage duration: " << average << "ms\n" << std::endl;
+
+	std::cout << "Calculated path from start pos (" << START_POS.x << " " << START_POS.y << ") to target pos" << std::endl;
 	// start node
 	uint32 startNode = csr.getNodeIdFromPos(START_POS);
 	std::vector<uint32> path = getPath(startNode, csr.graph, levelHost);

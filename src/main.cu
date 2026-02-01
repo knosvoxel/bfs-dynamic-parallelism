@@ -25,6 +25,8 @@
 
 using namespace glm;
 
+#define PRINT_PATH false
+
 enum BFSAlgorithm
 {
 	ALGO_BFS_CPU,
@@ -44,7 +46,12 @@ const ivec2 START_POS = ivec2(1500, 1350);
 const ivec2 TARGET_POS = ivec2(0, 0);
 
 int32 numIterations = 10;
-float totalTime = 0.0f;
+float32 totalDuration = 0.0;
+std::vector<float32> meshingDurations;
+float32 minDuration = UINT_MAX;
+float32 maxDuration = 0.0;
+float32 median = 0.0;
+float32 standardDeviation = 0.0;
 
 std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* levels)
 {
@@ -185,13 +192,42 @@ int main()
 
 		if (currIteration > 0)
 		{
-			totalTime += timer.ElapsedMs();
+			float32 elapsed = timer.ElapsedMs();
+			meshingDurations.push_back(elapsed);
+			totalDuration += elapsed;
+			if (elapsed > maxDuration) maxDuration = elapsed;
+			if (elapsed < minDuration) minDuration = elapsed;
 		}
 	}
 
-	float32 average = totalTime / numIterations;
-	std::cout << "\nAverage duration: " << average << "ms\n" << std::endl;
+	float32 mean = totalDuration / numIterations;
 
+	if (numIterations % 2 == 0) {
+		median = (meshingDurations[numIterations / 2 + 1] + meshingDurations[numIterations / 2]) / 2.0;
+	}
+	else {
+		median = meshingDurations[numIterations / 2];
+	}
+
+	float32 variance = 0.0;
+
+	for(float32 duration : meshingDurations)
+	{
+		variance += (duration - mean) * (duration - mean);
+	}
+
+	variance /= numIterations;
+	standardDeviation = sqrt(variance);
+
+	std::cout << "\nBFS duration:" << std::endl;
+	std::cout << " Total: " << totalDuration << " ms" << std::endl;
+	std::cout << " Average: " << mean << " ms" << std::endl;
+	std::cout << " Min: " << minDuration << " ms" << std::endl;
+	std::cout << " Max: " << maxDuration << " ms" << std::endl;
+	std::cout << " Median: " << median << " ms" << std::endl;
+	std::cout << " Standard Deviation: " << standardDeviation << " ms\n" << std::endl;
+
+#if PRINT_PATH
 	std::cout << "Calculated path from start pos (" << START_POS.x << " " << START_POS.y << ") to target pos" << std::endl;
 	// start node
 	uint32 startNode = csr.getNodeIdFromPos(START_POS);
@@ -237,6 +273,7 @@ int main()
 
 	ofs.write(reinterpret_cast<const char*>(rgbImage.data()), rgbImage.size());
 	ofs.close();
+#endif // PRINT_PATH
 
 	// Free memory
 	cudaFree(levelDevice);

@@ -28,13 +28,13 @@ void bfsFrontier(CSRGraph csrGraph, uint32* level, uint32* prevFrontier, uint32*
 
 void runBFSFrontier(CSRGraph& graphDevice, uint32* levelDevice, uint32* levelHost, uint32 targetNode, uint32 numVertices, uint32& currLevel, Timer& timer)
 {
-	uint32* currFrontierDevice, * nextFrontierDevice, * nextFrontierCountDevice;
+	uint32* frontiers[2], * nextFrontierCountDevice;
 
-	GPU_ERRCHK(cudaMalloc(&currFrontierDevice, numVertices * sizeof(uint32)));
-	GPU_ERRCHK(cudaMalloc(&nextFrontierDevice, numVertices * sizeof(uint32)));
+	GPU_ERRCHK(cudaMalloc(&frontiers[0], numVertices * sizeof(uint32)));
+	GPU_ERRCHK(cudaMalloc(&frontiers[1], numVertices * sizeof(uint32)));
 	GPU_ERRCHK(cudaMalloc(&nextFrontierCountDevice, sizeof(uint32)));
 
-	GPU_ERRCHK(cudaMemcpy(currFrontierDevice, &targetNode, sizeof(uint32), cudaMemcpyHostToDevice));
+	GPU_ERRCHK(cudaMemcpy(frontiers[0], &targetNode, sizeof(uint32), cudaMemcpyHostToDevice));
 
 	uint32 numFrontierElements = 1;
 	int32 threadsPerBlock = 256;
@@ -59,11 +59,12 @@ void runBFSFrontier(CSRGraph& graphDevice, uint32* levelDevice, uint32* levelHos
 
 		}
 
-		bfsFrontier << <currNumBlocks, currNumThreads >> > (graphDevice, levelDevice, currFrontierDevice, nextFrontierDevice, numFrontierElements, nextFrontierCountDevice, currLevel);
+		uint32* frontierCurr = frontiers[currLevel % 2];
+		uint32* frontierNext = frontiers[(currLevel + 1) % 2];
+
+		bfsFrontier << <currNumBlocks, currNumThreads >> > (graphDevice, levelDevice, frontierCurr, frontierNext, numFrontierElements, nextFrontierCountDevice, currLevel);
 
 		GPU_ERRCHK(cudaMemcpy(&numFrontierElements, nextFrontierCountDevice, sizeof(uint32), cudaMemcpyDeviceToHost));
-
-		std::swap(currFrontierDevice, nextFrontierDevice);
 
 		currLevel++;
 
@@ -78,7 +79,7 @@ void runBFSFrontier(CSRGraph& graphDevice, uint32* levelDevice, uint32* levelHos
 
 	std::cout << timer.ToString("Frontier BFS") << std::endl;
 
-	cudaFree(currFrontierDevice);
-	cudaFree(nextFrontierDevice);
+	cudaFree(frontiers[0]);
+	cudaFree(frontiers[1]);
 	cudaFree(nextFrontierCountDevice);
 }

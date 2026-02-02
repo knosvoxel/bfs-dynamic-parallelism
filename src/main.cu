@@ -37,7 +37,7 @@ enum BFSAlgorithm
 	ALGO_BFS_DYNAMIC_PARALLEL
 };
 
-BFSAlgorithm activeAlgorithm = BFSAlgorithm::ALGO_BFS_DYNAMIC_PARALLEL;
+BFSAlgorithm activeAlgorithm = BFSAlgorithm::ALGO_BFS_FRONTIER;
 
 // grid width & height
 const uint32 GRID_SIZE = 2048;

@@ -14,7 +14,7 @@ struct CSRGraphHost {
 	CSRGraph graph;
 	uint32 gridSize = 0;
 	uint32 numEdges = 0;
-	std::vector<int32> gridPosToNodeID;
+	std::vector<int32> gridPosToVertexID;
 
 	~CSRGraphHost() {
 		delete[] graph.srcPtrs;
@@ -25,22 +25,22 @@ struct CSRGraphHost {
 
 	void constructCSR(const std::vector<int>& noiseData, const uint32 gridSize) {
 		this->gridSize = gridSize;
-		gridPosToNodeID = std::vector<int32>(gridSize * gridSize, -1);
+		gridPosToVertexID = std::vector<int32>(gridSize * gridSize, -1);
 
-		int nodeCount = 0;
+		int vertexCount = 0;
 		for (int32 i = 0; i < noiseData.size(); i++)
 		{
 			if (noiseData[i] == 1) {
-				gridPosToNodeID[i] = nodeCount++;
+				gridPosToVertexID[i] = vertexCount++;
 
 			}
 		}
 
-		graph.numVertices = nodeCount;
+		graph.numVertices = vertexCount;
 
 		std::vector<int32> tempSrcPtrs;
 		std::vector<int32> tempDst;
-		tempSrcPtrs.reserve(nodeCount + 1);
+		tempSrcPtrs.reserve(vertexCount + 1);
 		tempSrcPtrs.push_back(0);
 
 		for (int32 y = 0; y < gridSize; y++)
@@ -68,7 +68,7 @@ struct CSRGraphHost {
 							int32 neighbourIdx = neighbourPos.y * gridSize + neighbourPos.x;
 							if (noiseData[neighbourIdx] == 1)
 							{
-								tempDst.push_back(gridPosToNodeID[neighbourIdx]);
+								tempDst.push_back(gridPosToVertexID[neighbourIdx]);
 							}
 						}
 					}
@@ -85,17 +85,17 @@ struct CSRGraphHost {
 
 		numEdges = graph.srcPtrs[graph.numVertices];
 		
-		std::cout << "Node Count: " << nodeCount << std::endl;
+		std::cout << "Vertex Count: " << vertexCount << std::endl;
 		std::cout << "Edge Count: " << numEdges << "\n" << std::endl;
 
 
 	}
 
-	int getNodeIdFromPos(ivec2 pos) {
+	int getVertexIdFromPos(ivec2 pos) {
 		if (pos.x < 0 || pos.x >= gridSize || pos.y < 0 || pos.y >= gridSize) {
 			return -1;
 		}
 		int32 gridIdx = pos.y * gridSize + pos.x;
-		return gridPosToNodeID[gridIdx];
+		return gridPosToVertexID[gridIdx];
 	}
 };

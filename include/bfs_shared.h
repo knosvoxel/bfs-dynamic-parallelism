@@ -59,7 +59,7 @@ void bfsShared(CSRGraph csrGraph, uint32* level, uint32* prevFrontier, uint32* c
 	}
 }
 
-void runBFSShared(CSRGraph& graphDevice, uint32* levelDevice, uint32* levelHost, uint32 targetNode, uint32 numVertices, uint32& currLevel, Timer& timer)
+void runBFSShared(CSRGraph& graphDevice, uint32* levelDevice, uint32* levelHost, uint32 targetVertex, uint32 numVertices, uint32& currLevel, Timer& timer)
 {
 	uint32* frontiers[2], * nextFrontierCountDevice;
 
@@ -67,7 +67,7 @@ void runBFSShared(CSRGraph& graphDevice, uint32* levelDevice, uint32* levelHost,
 	GPU_ERRCHK(cudaMalloc(&frontiers[1], numVertices * sizeof(uint32)));
 	GPU_ERRCHK(cudaMalloc(&nextFrontierCountDevice, sizeof(uint32)));
 
-	GPU_ERRCHK(cudaMemcpy(frontiers[0], &targetNode, sizeof(uint32), cudaMemcpyHostToDevice));
+	GPU_ERRCHK(cudaMemcpy(frontiers[0], &targetVertex, sizeof(uint32), cudaMemcpyHostToDevice));
 
 	uint32 numFrontierElements = 1;
 	int32 threadsPerBlock = 256;

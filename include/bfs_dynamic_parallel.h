@@ -86,7 +86,7 @@ void bfsDynamicParallel(CSRGraph csrGraph, uint32* level, uint32* prevFrontier, 
 	}
 }
 
-void runBFSDynamicParallel(CSRGraph& graphDevice, uint32* levelDevice, uint32* levelHost, uint32 targetNode, uint32 numVertices, uint32& currLevel, Timer& timer)
+void runBFSDynamicParallel(CSRGraph& graphDevice, uint32* levelDevice, uint32* levelHost, uint32 targetVertex, uint32 numVertices, uint32& currLevel, Timer& timer)
 {
 	uint32* currFrontierDevice, * nextFrontierDevice, * nextFrontierCountDevice, * finalLevelDevice, *blocksFinshedDevice;
 
@@ -96,7 +96,7 @@ void runBFSDynamicParallel(CSRGraph& graphDevice, uint32* levelDevice, uint32* l
 	GPU_ERRCHK(cudaMalloc(&finalLevelDevice, sizeof(uint32)));
 	GPU_ERRCHK(cudaMalloc(&blocksFinshedDevice, sizeof(uint32)));
 
-	GPU_ERRCHK(cudaMemcpy(currFrontierDevice, &targetNode, sizeof(uint32), cudaMemcpyHostToDevice));
+	GPU_ERRCHK(cudaMemcpy(currFrontierDevice, &targetVertex, sizeof(uint32), cudaMemcpyHostToDevice));
 	GPU_ERRCHK(cudaMemset(nextFrontierCountDevice, 0, sizeof(uint32)));
 	GPU_ERRCHK(cudaMemset(finalLevelDevice, 0, sizeof(uint32)));
 	GPU_ERRCHK(cudaMemset(blocksFinshedDevice, 0, sizeof(uint32)));

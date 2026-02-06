@@ -7,11 +7,11 @@
 #include "csr.h"
 #include "timer.h"
 
-void runBFSCPUQueue(CSRGraphHost& csr, uint32* levelHost, uint32 targetNode, Timer& timer)
+void runBFSCPUQueue(CSRGraphHost& csr, uint32* levelHost, uint32 targetVertex, Timer& timer)
 {
 	std::deque<uint32> frontier;
 
-	frontier.push_back(targetNode);
+	frontier.push_back(targetVertex);
 
 	uint32 lastLevel = 0;
 

@@ -26,26 +26,27 @@
 using namespace glm;
 
 #define PRINT_PATH false
+#define ENABLE_OBSTACLES true
 
 enum BFSAlgorithm
 {
-	ALGO_BFS_CPU,
-	ALGO_BFS_CPU_QUEUE,
-	ALGO_BFS_GPU,
-	ALGO_BFS_FRONTIER,
-	ALGO_BFS_SHARED,
-	ALGO_BFS_DYNAMIC_PARALLEL
+	CPU,
+	CPU_QUEUE,
+	GPU,
+	GPU_FRONTIER,
+	GPU_SHARED,
+	GPU_DYNAMIC_PARALLEL
 };
 
-BFSAlgorithm activeAlgorithm = BFSAlgorithm::ALGO_BFS_FRONTIER;
+BFSAlgorithm activeAlgorithm = BFSAlgorithm::GPU_DYNAMIC_PARALLEL;
 
 // grid width & height
-const uint32 GRID_SIZE = 2048;
+const uint32 GRID_SIZE = 8;
 
 const ivec2 START_POS = ivec2(1500, 1350);
 const ivec2 TARGET_POS = ivec2(0, 0);
 
-int32 numIterations = 100;
+int32 numIterations = 1;
 float32 totalDuration = 0.0;
 std::vector<float32> meshingDurations;
 float32 minDuration = UINT_MAX;
@@ -53,29 +54,29 @@ float32 maxDuration = 0.0;
 float32 median = 0.0;
 float32 standardDeviation = 0.0;
 
-std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* levels)
+std::vector<uint32> getPath(uint32 startingVertex, const CSRGraph& graph,uint32* levels)
 {
 	std::vector<uint32> path;
 
-	if (levels[startingNode] == UINT_MAX) 
+	if (levels[startingVertex] == UINT_MAX) 
 	{
 		std::cout << "No path found!" << std::endl;
 		return path;
 	}
 
-	uint32 currNode = startingNode;
-	path.push_back(currNode);
+	uint32 currVertex = startingVertex;
+	path.push_back(currVertex);
 
-	std::cout << "Starting level: " << levels[currNode] << "\n" << std::endl;
+	std::cout << "Starting level: " << levels[currVertex] << "\n" << std::endl;
 
-	while (levels[currNode] != 0) 
+	while (levels[currVertex] != 0) 
 	{
-		uint32 currentLevel = levels[currNode];
+		uint32 currentLevel = levels[currVertex];
 		bool found = false;
 
 		std::vector<uint32> possibleEdges;
 
-		for (int32 edge = graph.srcPtrs[currNode]; edge < graph.srcPtrs[currNode + 1]; ++edge)
+		for (int32 edge = graph.srcPtrs[currVertex]; edge < graph.srcPtrs[currVertex + 1]; ++edge)
 		{
 			uint32 neighbour = graph.dst[edge];
 
@@ -87,7 +88,7 @@ std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* l
 
 		int32 edgeRand = rand() % possibleEdges.size();
 		uint32 selectedEdge = possibleEdges[edgeRand];
-		currNode = selectedEdge;
+		currVertex = selectedEdge;
 		path.push_back(selectedEdge);
 		found = true;
 
@@ -99,8 +100,8 @@ std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* l
 	}
 
 	std::cout << "Calculated path: " << std::endl;
-	for (uint32 node : path) 
-		std::cout << node << " ";
+	for (uint32 vertex : path) 
+		std::cout << vertex << " ";
 	std::cout << std::endl;
 
 	return path;
@@ -108,22 +109,34 @@ std::vector<uint32> getPath(uint32 startingNode, const CSRGraph& graph,uint32* l
 
 int main()
 {
+	std::vector<int32> noiseData(GRID_SIZE * GRID_SIZE);
+	int32 index = 0;
+#if ENABLE_OBSTACLES
 	FastNoiseLite noise;
 	noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
 	noise.SetFractalType(FastNoiseLite::FractalType_FBm);
-
-	std::vector<int> noiseData(GRID_SIZE * GRID_SIZE);
-	int index = 0;
+	noise.SetFrequency(0.2f);
+	noise.SetFractalLacunarity(2.5f);
+	noise.SetFractalGain(0.6f);
 
 	for (int y = 0; y < GRID_SIZE; y++)
 	{
 		for (int x = 0; x < GRID_SIZE; x++)
 		{
-			//float noiseValue = (noise.GetNoise((float)x , (float)y) + 1.0) / 2.0;
-			//noiseValue >= 0.5 ? noiseData[index++] = 1 : noiseData[index++] = 0;
+
+			float noiseValue = (noise.GetNoise((float)x, (float)y) + 1.0) / 2.0;
+			noiseValue >= 0.4 ? noiseData[index++] = 1 : noiseData[index++] = 0;
+		}
+	}
+#else
+	for (int y = 0; y < GRID_SIZE; y++)
+	{
+		for (int x = 0; x < GRID_SIZE; x++)
+		{
 			noiseData[index++] = 1;
 		}
 	}
+#endif // ENABLE_OBSTACLES
 
 	CSRGraphHost csr;
 	CSRGraph graphDevice;
@@ -139,7 +152,7 @@ int main()
 	GPU_ERRCHK(cudaMemcpy(graphDevice.dst, csr.graph.dst, csr.numEdges * sizeof(int32), cudaMemcpyHostToDevice));
 
 	// target
-	uint32 targetNode = csr.getNodeIdFromPos(TARGET_POS);
+	uint32 targetVertex = csr.getVertexIdFromPos(TARGET_POS);
 
 	std::cout << "Target position: (" << TARGET_POS.x << " " << TARGET_POS.y << ")" << "\n" << std::endl;
 
@@ -155,7 +168,7 @@ int main()
 		for (int32 i = 0; i < csr.graph.numVertices; i++) {
 			levelHost[i] = UINT_MAX;
 		}
-		levelHost[targetNode] = 0;
+		levelHost[targetVertex] = 0;
 
 		GPU_ERRCHK(cudaMemcpy(levelDevice, levelHost, csr.graph.numVertices * sizeof(uint32), cudaMemcpyHostToDevice));
 
@@ -168,23 +181,23 @@ int main()
 
 		switch (activeAlgorithm)
 		{
-		case BFSAlgorithm::ALGO_BFS_CPU:
+		case BFSAlgorithm::CPU:
 			runBFSCPU(csr, levelHost, currLevel, timer);
 			break;
-		case BFSAlgorithm::ALGO_BFS_CPU_QUEUE:
-			runBFSCPUQueue(csr, levelHost, targetNode, timer);
+		case BFSAlgorithm::CPU_QUEUE:
+			runBFSCPUQueue(csr, levelHost, targetVertex, timer);
 			break;
-		case BFSAlgorithm::ALGO_BFS_GPU:
+		case BFSAlgorithm::GPU:
 			runBFSGPU(graphDevice, levelDevice, levelHost, numVertices, currLevel, timer);
 			break;
-		case BFSAlgorithm::ALGO_BFS_FRONTIER:
-			runBFSFrontier(graphDevice, levelDevice, levelHost, targetNode, numVertices, currLevel, timer);
+		case BFSAlgorithm::GPU_FRONTIER:
+			runBFSFrontier(graphDevice, levelDevice, levelHost, targetVertex, numVertices, currLevel, timer);
 			break;
-		case BFSAlgorithm::ALGO_BFS_SHARED:
-			runBFSShared(graphDevice, levelDevice, levelHost, targetNode, numVertices, currLevel, timer);
+		case BFSAlgorithm::GPU_SHARED:
+			runBFSShared(graphDevice, levelDevice, levelHost, targetVertex, numVertices, currLevel, timer);
 			break;
-		case BFSAlgorithm::ALGO_BFS_DYNAMIC_PARALLEL:
-			runBFSDynamicParallel(graphDevice, levelDevice, levelHost, targetNode, numVertices, currLevel, timer);
+		case BFSAlgorithm::GPU_DYNAMIC_PARALLEL:
+			runBFSDynamicParallel(graphDevice, levelDevice, levelHost, targetVertex, numVertices, currLevel, timer);
 			break;
 		default:
 			break;
@@ -229,18 +242,18 @@ int main()
 
 #if PRINT_PATH
 	std::cout << "Calculated path from start pos (" << START_POS.x << " " << START_POS.y << ") to target pos" << std::endl;
-	// start node
-	uint32 startNode = csr.getNodeIdFromPos(START_POS);
-	std::vector<uint32> path = getPath(startNode, csr.graph, levelHost);
+	// start vertex
+	uint32 startVertex = csr.getVertexIdFromPos(START_POS);
+	std::vector<uint32> path = getPath(startVertex, csr.graph, levelHost);
 
-	std::vector<int32> nodeToGridIndex;
-	nodeToGridIndex.reserve(csr.graph.numVertices);
+	std::vector<int32> vertexToGridIndex;
+	vertexToGridIndex.reserve(csr.graph.numVertices);
 
 	for (int i = 0; i < noiseData.size(); i++) 
 	{
 		if (noiseData[i] == 1) 
 		{
-			nodeToGridIndex.push_back(i);
+			vertexToGridIndex.push_back(i);
 		}
 	}
 
@@ -254,11 +267,11 @@ int main()
 		rgbImage[i * 3 + 2] = val;
 	}
 
-	for (int32 nodeID : path) 
+	for (int32 vertexID : path) 
 	{
-		if (nodeID < nodeToGridIndex.size()) 
+		if (vertexID < vertexToGridIndex.size()) 
 		{
-			int gridIdx = nodeToGridIndex[nodeID];
+			int gridIdx = vertexToGridIndex[vertexID];
 			rgbImage[gridIdx * 3] = 255;
 			rgbImage[gridIdx * 3 + 1] = 0;
 			rgbImage[gridIdx * 3 + 2] = 0;

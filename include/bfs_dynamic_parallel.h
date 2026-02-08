@@ -88,24 +88,24 @@ void bfsDynamicParallel(CSRGraph csrGraph, uint32* level, uint32* prevFrontier, 
 
 void runBFSDynamicParallel(CSRGraph& graphDevice, uint32* levelDevice, uint32* levelHost, uint32 targetVertex, uint32 numVertices, uint32& currLevel, Timer& timer)
 {
-	uint32* currFrontierDevice, * nextFrontierDevice, * nextFrontierCountDevice, * finalLevelDevice, *blocksFinshedDevice;
+	uint32* currFrontierDevice, * nextFrontierDevice, * nextFrontierCountDevice, * finalLevelDevice, * blocksFinishedDevice;
 
 	GPU_ERRCHK(cudaMalloc(&currFrontierDevice, numVertices * sizeof(uint32)));
 	GPU_ERRCHK(cudaMalloc(&nextFrontierDevice, numVertices * sizeof(uint32)));
 	GPU_ERRCHK(cudaMalloc(&nextFrontierCountDevice, sizeof(uint32)));
 	GPU_ERRCHK(cudaMalloc(&finalLevelDevice, sizeof(uint32)));
-	GPU_ERRCHK(cudaMalloc(&blocksFinshedDevice, sizeof(uint32)));
+	GPU_ERRCHK(cudaMalloc(&blocksFinishedDevice, sizeof(uint32)));
 
 	GPU_ERRCHK(cudaMemcpy(currFrontierDevice, &targetVertex, sizeof(uint32), cudaMemcpyHostToDevice));
 	GPU_ERRCHK(cudaMemset(nextFrontierCountDevice, 0, sizeof(uint32)));
 	GPU_ERRCHK(cudaMemset(finalLevelDevice, 0, sizeof(uint32)));
-	GPU_ERRCHK(cudaMemset(blocksFinshedDevice, 0, sizeof(uint32)));
+	GPU_ERRCHK(cudaMemset(blocksFinishedDevice, 0, sizeof(uint32)));
 
 	uint32 numFrontierElements = 1;
 	uint32 finalLevelHost = 0;
 	int32 threadsPerBlock = 256;
 
-	bfsDynamicParallel << <1, threadsPerBlock >> > (graphDevice, levelDevice, currFrontierDevice, nextFrontierDevice, numFrontierElements, nextFrontierCountDevice, currLevel, finalLevelDevice, blocksFinshedDevice);
+	bfsDynamicParallel << <1, threadsPerBlock >> > (graphDevice, levelDevice, currFrontierDevice, nextFrontierDevice, numFrontierElements, nextFrontierCountDevice, currLevel, finalLevelDevice, blocksFinishedDevice);
 
 	GPU_ERRCHK(cudaDeviceSynchronize());
 
@@ -121,5 +121,5 @@ void runBFSDynamicParallel(CSRGraph& graphDevice, uint32* levelDevice, uint32* l
 	cudaFree(nextFrontierDevice);
 	cudaFree(nextFrontierCountDevice);
 	cudaFree(finalLevelDevice);
-	cudaFree(blocksFinshedDevice);
+	cudaFree(blocksFinishedDevice);
 }

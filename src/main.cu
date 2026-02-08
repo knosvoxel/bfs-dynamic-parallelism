@@ -41,16 +41,16 @@ enum BFSAlgorithm
 BFSAlgorithm activeAlgorithm = BFSAlgorithm::GPU_DYNAMIC_PARALLEL;
 
 // grid width & height
-const uint32 GRID_SIZE = 8;
-
+const uint32 GRID_SIZE = 2048;
+ 
 const ivec2 START_POS = ivec2(1500, 1350);
 const ivec2 TARGET_POS = ivec2(0, 0);
 
-int32 numIterations = 1;
+const int32 numIterations = 100;
 float32 totalDuration = 0.0;
 std::vector<float32> meshingDurations;
 float32 minDuration = UINT_MAX;
-float32 maxDuration = 0.0;
+float32 maxDuration = 0.0; 
 float32 median = 0.0;
 float32 standardDeviation = 0.0;
 

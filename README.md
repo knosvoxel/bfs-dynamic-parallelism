@@ -21,7 +21,8 @@ All configuration options can be found in *main.cu*
 - **numIterations:** Amount of iterations a configured algorithm is run for. GPU implementations additionally include one warm-up run. 
 
 ## Requirements:
-- CUDA
+- CUDA (NVCC)
+- CMake version 4.0 or greater
 
 ## Paper:
 The paper for this project can be found in the paper folder

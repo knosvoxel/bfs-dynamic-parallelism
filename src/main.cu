@@ -25,9 +25,6 @@
 
 using namespace glm;
 
-#define PRINT_PATH false
-#define ENABLE_OBSTACLES true
-
 enum BFSAlgorithm
 {
 	CPU,
@@ -38,6 +35,11 @@ enum BFSAlgorithm
 	GPU_DYNAMIC_PARALLEL
 };
 
+//////// CONFIG ////////
+
+#define PRINT_PATH false
+#define ENABLE_OBSTACLES true
+
 BFSAlgorithm activeAlgorithm = BFSAlgorithm::GPU_DYNAMIC_PARALLEL;
 
 // grid width & height
@@ -47,6 +49,9 @@ const ivec2 START_POS = ivec2(1500, 1350);
 const ivec2 TARGET_POS = ivec2(0, 0);
 
 const int32 numIterations = 100;
+
+////// END CONFIG //////
+
 float32 totalDuration = 0.0;
 std::vector<float32> meshingDurations;
 float32 minDuration = UINT_MAX;

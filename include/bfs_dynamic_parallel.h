@@ -62,8 +62,8 @@ void bfsDynamicParallel(CSRGraph csrGraph, uint32* level, uint32* prevFrontier, 
 
 	__shared__ bool isLastBlock;
 	if (threadIdx.x == 0) {
-		uint32 ticket = atomicAdd(blocksFinished, 1);
-		isLastBlock = (ticket == gridDim.x - 1);
+		uint32 arrivalId = atomicAdd(blocksFinished, 1);
+		isLastBlock = (arrivalId == gridDim.x - 1);
 	}
 
 	__syncthreads();
